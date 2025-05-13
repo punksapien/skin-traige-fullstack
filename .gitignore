@@ -20,28 +20,11 @@ wheels/
 .installed.cfg
 *.egg
 
-# Poetry
-.venv/
-.env
-
-# Turborepo
-.turbo
-.next
-out
-
-# Docker
-.dockerignore
-
-# Logs
-logs
-*.log
+# Node
+node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# Testing
-.coverage
-htmlcov/
 
 # IDEs
 .idea/
@@ -49,6 +32,21 @@ htmlcov/
 *.swp
 *.swo
 
-# OS specific
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build
+dist/
+build/
+
+# Model files
+*.pth
+packages/model/model.pth
+
+# Misc
 .DS_Store
 Thumbs.db
