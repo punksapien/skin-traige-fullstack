@@ -1,9 +1,11 @@
 import io
 import time
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
+from fastapi.middleware.cors import CORSMiddleware
 
 from skin_triage_model import load_model, predict
 
@@ -13,6 +15,18 @@ app = FastAPI(
     description="API for classifying skin conditions",
     version="0.1.0"
 )
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount static files at /static
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Response model
 class PredictionResponse(BaseModel):
@@ -61,12 +75,27 @@ async def triage_image(file: UploadFile = File(...)):
             processing_time_ms=processing_time
         )
     except Exception as e:
+        processing_time = int((time.time() - start_time) * 1000)
         raise HTTPException(
             status_code=500,
-            detail=f"Error processing image: {str(e)}"
+            detail=f"Error processing image: {str(e)}",
+            headers={"X-Processing-Time": str(processing_time)}
         )
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+# Serve index.html for root
+@app.get("/")
+async def serve_root():
+    return FileResponse("static/index.html")
+
+# Serve index.html for all other non-API routes (SPA fallback)
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str, request: Request):
+    # Only serve index.html for non-API, non-static, non-docs routes
+    if not (full_path.startswith("triage-image") or full_path.startswith("health") or full_path.startswith("docs") or full_path.startswith("static")):
+        return FileResponse("static/index.html")
+    return JSONResponse(status_code=404, content={"detail": "Not Found"})
