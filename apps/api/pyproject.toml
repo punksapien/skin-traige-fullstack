@@ -1,0 +1,25 @@
+[project]
+name = "skin-triage-api"
+version = "0.1.0"
+description = "Skin triage API service"
+authors = [
+    {name = "Clinikly"}
+]
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "fastapi (>=0.115.12,<0.116.0)",
+    "uvicorn (>=0.34.2,<0.35.0)",
+    "torch (>=2.7.0,<3.0.0)",
+    "pillow (>=11.2.1,<12.0.0)",
+    "python-multipart (>=0.0.20,<0.0.21)",
+    "skin-triage-model @ file:///Users/macintosh/Developer/clinikly/packages/model"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.dependencies]
+skin-triage-model = {develop = true}
