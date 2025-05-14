@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir -r /tmp/reqs.txt
 # 3. copy code + model + static
 WORKDIR /app
 
-# Copy and install model package first
+# Copy model package and model file first
 COPY packages/model /app/packages/model
 COPY packages/model/model.pth /app/packages/model/model.pth
 RUN pip install -e /app/packages/model

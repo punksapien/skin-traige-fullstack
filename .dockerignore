@@ -59,3 +59,5 @@ Thumbs.db
 
 # Keep dist directory
 !apps/web/dist
+# Keep model file
+!packages/model/model.pth
