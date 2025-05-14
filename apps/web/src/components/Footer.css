@@ -1,0 +1,26 @@
+.footer {
+  margin-top: 2rem;
+  padding: 1.5rem 0;
+  background-color: #f8f9fa;
+  border-top: 1px solid #e9ecef;
+}
+
+.footer-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+  text-align: center;
+}
+
+.footer p {
+  margin: 0.5rem 0;
+  color: #6c757d;
+}
+
+.disclaimer {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #6c757d;
+  border-top: 1px solid #e9ecef;
+  padding-top: 0.5rem;
+}

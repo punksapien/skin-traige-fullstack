@@ -41,6 +41,7 @@ yarn-error.log*
 
 # Build
 dist/
+!apps/web/dist
 build/
 
 # Model files

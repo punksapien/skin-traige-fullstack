@@ -19,7 +19,11 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "http://0.0.0.0:8080"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -75,11 +79,19 @@ async def triage_image(file: UploadFile = File(...)):
             processing_time_ms=processing_time
         )
     except Exception as e:
+        import traceback
+        print(f"Error processing image: {e}")
+        traceback.print_exc()
         processing_time = int((time.time() - start_time) * 1000)
-        raise HTTPException(
+        # Always return a valid JSON error response
+        return JSONResponse(
             status_code=500,
-            detail=f"Error processing image: {str(e)}",
-            headers={"X-Processing-Time": str(processing_time)}
+            content={
+                "label": "error",
+                "confidence": 0.0,
+                "processing_time_ms": processing_time,
+                "error": f"Error processing image: {str(e)}"
+            }
         )
 
 @app.get("/health")

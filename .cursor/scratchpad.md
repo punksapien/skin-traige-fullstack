@@ -1,51 +1,121 @@
-# Skin Triage Microservice Project
+# Monorepo Dockerization and Fly.io Deployment Plan
 
 ## Background and Motivation
-Building a "skin-triage" microservice that accepts images and returns classification (acne or other) with confidence levels. Using turborepo monorepo structure with FastAPI backend and a pre-trained EfficientNet PyTorch model.
+
+The goal is to dockerize a monorepo containing a FastAPI backend (`apps/api`) and a React/Vite frontend (`apps/web`). The frontend's static build should be served by the FastAPI application from the same Docker container. The entire application will be deployed to Fly.io under a single URL (`skin-triage.fly.dev`). The `packages/model` directory contains the ML model and its loader logic, which is utilized by the API.
 
 ## Key Challenges and Analysis
-- Setting up proper monorepo structure with Turborepo
-- Creating a FastAPI service that can load and use the PyTorch model
-- Dockerizing the application for deployment to fly.io
-- Creating appropriate interfaces between the model and API
+
+1.  **Monorepo Dockerization:** Efficiently layering the Docker image to include dependencies for both the Python backend and Node.js frontend build process, while keeping the image size small (≤ 1.5 GB).
+2.  **Frontend Build Integration:** Ensuring the frontend is built correctly (`apps/web/dist`) and its static assets are copied to a location accessible by the FastAPI backend (`apps/api/static`) for serving.
+3.  **Static File Serving with FastAPI:** Correctly configuring FastAPI to serve the frontend's `index.html` for the root path (`/`) and any unmatched routes (fallback), and serve other static assets. API routes (`/triage-image`, `/docs`) must remain functional.
+4.  **Fly.io Deployment:** Configuring `fly.toml` for Docker deployment, setting appropriate ports, and creating a simple deployment script.
+5.  **Resource Constraints:** Adhering to the image size (≤ 1.5 GB) and memory (≤256 MB) limits imposed by the requirements.
 
 ## High-level Task Breakdown
-1. Initialize turborepo layout with apps/api, apps/web, packages/model ✅
-2. Set up Python environment with Poetry for the API ✅
-3. Create model loader utility in packages/model ✅
-4. Create FastAPI endpoint for image classification ✅
-5. Set up Docker and docker-compose configuration ✅
-6. Create fly.io deployment configuration ✅
-7. Write documentation and examples ✅
+
+1.  **Create `Dockerfile` at the monorepo root.**
+    *   **Success Criteria:** `Dockerfile` is created at the project root.
+2.  **Set up base Python environment in `Dockerfile`.**
+    *   Use `python:3.11-slim` as base.
+    *   **Success Criteria:** Base image `python:3.11-slim` is specified in `Dockerfile`.
+3.  **Install Poetry and Python dependencies for `apps/api` in `Dockerfile`.**
+    *   Copy `apps/api/pyproject.toml` and `apps/api/poetry.lock`.
+    *   Install Poetry.
+    *   Run `poetry install --no-root --no-dev -C apps/api`.
+    *   **Success Criteria:** Python dependencies for the API are installed in the Docker image without installing the `apps/api` package itself as editable.
+4.  **Install Node.js and package manager (pnpm/npm), and build the frontend in `Dockerfile`.**
+    *   Install Node.js (e.g., LTS version) and pnpm (preferred, or npm as fallback).
+    *   Set working directory to `apps/web`.
+    *   Copy `apps/web/package.json` and `apps/web/pnpm-lock.yaml` (or `package-lock.json`).
+    *   Run `pnpm install` (or `npm ci`).
+    *   Run `pnpm run build` (or `npm run build`).
+    *   **Success Criteria:** Frontend is successfully built into `apps/web/dist` within the Docker image.
+5.  **Copy frontend build output to `apps/api/static` in `Dockerfile`.**
+    *   Copy contents of `apps/web/dist` to `apps/api/static`.
+    *   **Success Criteria:** Frontend static files are present in `apps/api/static` within the Docker image.
+6.  **Modify `apps/api/main.py` to serve static files.**
+    *   Import `StaticFiles` from `fastapi.staticfiles`.
+    *   Mount static files using `app.mount("/", StaticFiles(directory="static", html=True), name="static")`.
+    *   This should be placed after API routes to ensure they take precedence, but FastAPI's mount typically handles this well.
+    *   **Success Criteria:** FastAPI serves `index.html` from `apps/api/static` at `/` and other client-side routes (due to `html=True`), serves assets from `static/`, and API routes (`/triage-image`, `/docs`) remain functional.
+7.  **Copy application code (API and model) into `Dockerfile`.**
+    *   Copy `apps/api` to `/app/apps/api`.
+    *   Copy `packages/model` to `/app/packages/model`.
+    *   Set `WORKDIR /app`.
+    *   Update `PYTHONPATH` if necessary (e.g., `ENV PYTHONPATH=/app`).
+    *   **Success Criteria:** All necessary Python application code and model files are correctly placed in the Docker image and importable.
+8.  **Set final CMD in `Dockerfile`.**
+    *   `CMD ["uvicorn", "apps.api.main:app", "--host", "0.0.0.0", "--port", "8080"]`
+    *   **Success Criteria:** Docker container runs the FastAPI application using Uvicorn, serving on port 8080.
+9.  **Test Docker image locally.**
+    *   Build: `docker build -t skin-triage .`
+    *   Run: `docker run -p 8080:8080 skin-triage`
+    *   Verify UI at `http://localhost:8080/`, API at `http://localhost:8080/triage-image`, and Swagger UI at `http://localhost:8080/docs`.
+    *   **Success Criteria:** The application runs correctly in Docker, serving both UI and API, and SPA routing works.
+10. **Generate `fly.toml` using `flyctl`.**
+    *   Ask user to run `flyctl launch --no-deploy --name skin-triage` in their terminal.
+    *   **Success Criteria:** `fly.toml` is generated by the user.
+11. **Configure `fly.toml`.**
+    *   Ensure `app = "skin-triage"`.
+    *   Set `primary_region` (user may need to confirm/choose).
+    *   Set `build = { dockerfile = "./Dockerfile" }`. Remove other build settings like builder/buildpacks.
+    *   In `http_service` (or `[[services]]` for older `fly.toml` versions):
+        *   `internal_port = 8080`
+        *   `force_https = true`
+        *   `auto_stop_machines = true` (default, good for cost)
+        *   `auto_start_machines = true` (default)
+        *   `min_machines_running = 0` (for free tier, or 1 if budget allows for always-on)
+    *   Ensure correct port mapping in `[[services.ports]]` if using that older structure (typically handled by `http_service` now).
+    *   **Success Criteria:** `fly.toml` is correctly configured for Docker deployment on Fly.io, targeting port 8080 internally.
+12. **Create deployment script (e.g., in `Makefile` at root).**
+    *   Add `fly-deploy` target to `Makefile`:
+        ```makefile
+        .PHONY: fly-deploy
+        fly-deploy:
+        	flyctl deploy
+        ```
+    *   (User should have already run `flyctl auth login`).
+    *   **Success Criteria:** A `Makefile` with a `fly-deploy` target is created to deploy the application to Fly.io.
+13. **Update `README.md`.**
+    *   Add Docker build and run instructions: `docker build -t skin-triage . && docker run -p 8080:8080 skin-triage`
+    *   Add Fly.io deployment instructions: `make fly-deploy` (or `flyctl deploy` directly).
+    *   Note: UI served at `/`, API at `/triage-image`, swagger at `/docs`.
+    *   **Success Criteria:** `README.md` is updated with relevant build, run, and deployment instructions.
+14. **Final check on constraints.**
+    *   Image size ≤ 1.5 GB (check after `docker build`).
+    *   Memory ≤256 MB (check on Fly.io dashboard after deployment, may require machine type `shared-cpu-1x` with `256MB` memory setting in `fly.toml`).
+    *   No extra services.
+    *   Static fallback for unmatched routes to `index.html` (verified in Task 9).
+    *   **Success Criteria:** All specified constraints are met. The application is live at `https://skin-triage.fly.dev/`.
 
 ## Project Status Board
-- [x] Initialize the directory structure
-- [x] Move model file to appropriate location
-- [x] Create Python project with Poetry
-- [x] Implement model loader utility
-- [x] Implement FastAPI endpoints
-- [x] Create Docker configuration
-- [x] Set up docker-compose
-- [x] Create fly.io deployment config
-- [x] Write README with documentation
 
-## Current Status / Progress Tracking
-All tasks have been completed! The project now has:
-- A proper monorepo structure with Turborepo
-- A FastAPI backend that can classify skin images
-- A model package that loads and uses the pre-trained EfficientNet model
-- Docker and docker-compose configuration for local development
-- fly.io deployment configuration
-- Complete documentation
+*   [x] **Task 1:** Create `Dockerfile` at the monorepo root.
+*   [x] **Task 2:** Set up base Python environment in `Dockerfile`.
+*   [x] **Task 3:** Install Poetry and Python dependencies for `apps/api` in `Dockerfile`.
+*   [x] **Task 4:** Install Node.js and package manager (pnpm/npm), and build the frontend in `Dockerfile`.
+*   [x] **Task 5:** Copy frontend build output to `apps/api/static` in `Dockerfile`.
+*   [x] **Task 6:** Modify `apps/api/main.py` to serve static files.
+*   [x] **Task 7:** Copy application code (API and model) into `Dockerfile`.
+*   [x] **Task 8:** Set final CMD in `Dockerfile`.
+*   [ ] **Task 9:** Test Docker image locally.
+*   [ ] **Task 10:** Generate `fly.toml` using `flyctl`.
+*   [ ] **Task 11:** Configure `fly.toml`.
+*   [ ] **Task 12:** Create deployment script.
+*   [ ] **Task 13:** Update `README.md`.
+*   [ ] **Task 14:** Final check on constraints and deploy.
 
 ## Executor's Feedback or Assistance Requests
-All tasks have been completed according to the requirements. To finalize the setup, we should:
-1. Test the API locally
-2. Make sure the model loads correctly
-3. Deploy the application to fly.io if required
+
+*   Docker build failed. User needs to ensure their Docker daemon (Colima) is running and accessible at `unix:///Users/macintosh/.colima/default/docker.sock`. Advised user to restart Docker daemon and retry `docker build -t skin-triage .`.
+*   Buildx component might also be missing or misconfigured, but Docker daemon is the primary issue.
 
 ## Lessons
-- Keep Docker images lean by using multi-stage builds where appropriate
-- Ensure relative paths are handled correctly for model loading
-- Document API endpoints thoroughly
-- When working with Poetry and local packages, make sure to have proper package structure with __init__.py files
+
+*   (User provided) Include info useful for debugging in the program output.
+*   (User provided) Read the file before you try to edit it.
+*   (User provided) If there are vulnerabilities that appear in the terminal, run `npm audit` before proceeding.
+*   (User provided) Always ask before using the `-force` git command.
+*   Poetry install command for API in Docker: `poetry install --no-root --no-dev -C apps/api` (to avoid installing the package itself if not structured as a library for the Docker context).
+*   FastAPI static files for SPA: Use `app.mount("/", StaticFiles(directory="static", html=True), name="static")` to serve the SPA from the root, ensuring it's correctly placed relative to other API routes. This handles `index.html` serving for `/` and client-side routes.
