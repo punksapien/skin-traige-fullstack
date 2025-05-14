@@ -15,7 +15,7 @@ WORKDIR /app
 
 # Copy model package and model file first
 COPY packages/model /app/packages/model
-COPY packages/model/model.pth /app/packages/model/model.pth
+#COPY packages/model/model.pth /app/packages/model/model.pth
 RUN pip install -e /app/packages/model
 
 # Copy API code and static files
